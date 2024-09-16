@@ -5,7 +5,6 @@ members = [
     "parley",
     "examples/tiny_skia_render",
     "examples/swash_render",
-    "examples/vello_editor",
 ]
 
 [workspace.package]
@@ -25,6 +24,6 @@ rust.unused_qualifications = "warn"
 [workspace.dependencies]
 fontique = { version = "0.1.0", default-features = false, path = "fontique" }
 parley = { version = "0.1.0", default-features = false, path = "parley" }
-peniko = { version = "0.1.0", default-features = false }
 skrifa = { version = "0.19.1", default-features = false }
-swash = { version = "0.1.16", default-features = false }
+peniko = { version = "0.1.0", default-features = false }
+smallvec = "1.13.2"

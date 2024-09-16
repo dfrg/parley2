@@ -20,7 +20,11 @@ libm = ["fontique/libm", "skrifa/libm", "peniko/libm"]
 system = ["std", "fontique/system"]
 
 [dependencies]
-swash = { workspace = true }
+swash = "0.1.16"
 skrifa = { workspace = true }
 peniko = { workspace = true }
-fontique = { workspace = true }
+fontique = { workspace = true, features = ["icu_properties"] }
+smallvec = { workspace = true }
+icu_normalizer = "1.5.0"
+icu_segmenter = "1.5.0"
+icu_properties = "1.5.1"

@@ -12,8 +12,6 @@ use {
 };
 
 /// Unique identifier for a font source.
-///
-/// See [`SourceInfo`].
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(transparent)]
 pub struct SourceId(u64);
@@ -57,8 +55,6 @@ impl SourceInfo {
 }
 
 /// Font data that is either a path to the font file or shared data in memory.
-///
-/// See [`SourceInfo`].
 #[derive(Clone)]
 pub enum SourceKind {
     /// Shared data containing the content of the font file.

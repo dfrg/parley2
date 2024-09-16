@@ -21,7 +21,7 @@ impl<'a, B: Brush> Line<'a, B> {
         self.data.item_range.len()
     }
 
-    /// Returns `true` if the line is empty.
+    /// Returns true if the line is empty.
     pub fn is_empty(&self) -> bool {
         self.data.item_range.is_empty()
     }
@@ -32,25 +32,22 @@ impl<'a, B: Brush> Line<'a, B> {
         if index >= self.data.item_range.end {
             return None;
         }
-        let item = self.layout.data.line_items.get(index)?;
+        let item = self.layout.line_items.get(index)?;
         Some(item)
     }
 
     /// Returns the run at the specified index.
     pub fn run(&self, index: usize) -> Option<Run<'a, B>> {
-        let original_index = index;
         let index = self.data.item_range.start + index;
         if index >= self.data.item_range.end {
             return None;
         }
-        let item = self.layout.data.line_items.get(index)?;
+        let item = self.layout.line_items.get(index)?;
 
         if item.kind == LayoutItemKind::TextRun {
             Some(Run {
                 layout: self.layout,
-                line_index: self.index,
-                index: original_index as u32,
-                data: self.layout.data.runs.get(item.index)?,
+                data: self.layout.runs.get(item.index)?,
                 line_data: Some(item),
             })
         } else {
@@ -62,16 +59,13 @@ impl<'a, B: Brush> Line<'a, B> {
     // TODO: provide iterator over inline_boxes and items
     pub fn runs(&self) -> impl Iterator<Item = Run<'a, B>> + 'a + Clone {
         let copy = self.clone();
-        let line_items = &copy.layout.data.line_items[self.data.item_range.clone()];
+        let line_items = &copy.layout.line_items[self.data.item_range.clone()];
         line_items
             .iter()
-            .enumerate()
-            .filter(|(_, item)| item.kind == LayoutItemKind::TextRun)
-            .map(move |(index, line_data)| Run {
+            .filter(|item| item.kind == LayoutItemKind::TextRun)
+            .map(move |line_data| Run {
                 layout: copy.layout,
-                line_index: copy.index,
-                index: index as u32,
-                data: &copy.layout.data.runs[line_data.index],
+                data: &copy.layout.runs[line_data.index],
                 line_data: Some(line_data),
             })
     }
@@ -96,9 +90,6 @@ pub struct LineMetrics {
     pub descent: f32,
     /// Typographic leading.
     pub leading: f32,
-    /// The absolute line height (in layout units).
-    /// It matches the CSS definition of line height where it is derived as a multiple of the font size.
-    pub line_height: f32,
     /// Offset to the baseline.
     pub baseline: f32,
     /// Offset for alignment.
@@ -107,22 +98,12 @@ pub struct LineMetrics {
     pub advance: f32,
     /// Advance of trailing whitespace.
     pub trailing_whitespace: f32,
-    /// Minimum coordinate in the direction orthogonal to line
-    /// direction.
-    ///
-    /// For horizontal text, this would be the top of the line.    
-    pub min_coord: f32,
-    /// Maximum coordinate in the direction orthogonal to line
-    /// direction.
-    ///
-    /// For horizontal text, this would be the bottom of the line.     
-    pub max_coord: f32,
 }
 
 impl LineMetrics {
-    /// Returns the size of the line
+    /// Returns the size of the line (ascent + descent + leading).
     pub fn size(&self) -> f32 {
-        self.line_height
+        self.ascent + self.descent + self.leading
     }
 }
 
@@ -222,7 +203,7 @@ impl<'a, B: Brush> Iterator for GlyphRunIter<'a, B> {
             let item = self.line.item(self.item_index)?;
             match item.kind {
                 LayoutItemKind::InlineBox => {
-                    let inline_box = &self.line.layout.data.inline_boxes[item.index];
+                    let inline_box = &self.line.layout.inline_boxes[item.index];
 
                     let x = self.offset + self.line.data.metrics.offset;
 
@@ -253,7 +234,7 @@ impl<'a, B: Brush> Iterator for GlyphRunIter<'a, B> {
                             glyph_count += 1;
                             advance += glyph.advance;
                         }
-                        let style = run.layout.data.styles.get(style_index)?;
+                        let style = run.layout.styles.get(style_index)?;
                         let glyph_start = self.glyph_start;
                         self.glyph_start += glyph_count;
                         let offset = self.offset;

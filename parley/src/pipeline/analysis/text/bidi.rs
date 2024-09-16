@@ -1,20 +1,52 @@
 // Copyright 2021 the Parley Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Unicode bidirectional algorithm.
+//! Unicode bidirectional resolver.
 
-#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
-
-use swash::text::{BidiClass, BracketType, Codepoint as _};
-use BidiClass::*;
+use icu_properties::bidi_data::BidiPairingProperties as BracketType;
+use icu_properties::BidiClass as IcuBidiClass;
 
 /// Type alias for a bidirectional level.
 pub type BidiLevel = u8;
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(transparent)]
+pub struct BidiClass(pub u8);
+
+impl BidiClass {
+    const fn mask(&self) -> u32 {
+        1 << self.0
+    }
+}
+
+pub const L: BidiClass = BidiClass(IcuBidiClass::LeftToRight.0);
+pub const R: BidiClass = BidiClass(IcuBidiClass::RightToLeft.0);
+pub const EN: BidiClass = BidiClass(IcuBidiClass::EuropeanNumber.0);
+pub const ES: BidiClass = BidiClass(IcuBidiClass::EuropeanSeparator.0);
+pub const ET: BidiClass = BidiClass(IcuBidiClass::EuropeanTerminator.0);
+pub const AN: BidiClass = BidiClass(IcuBidiClass::ArabicNumber.0);
+pub const CS: BidiClass = BidiClass(IcuBidiClass::CommonSeparator.0);
+pub const B: BidiClass = BidiClass(IcuBidiClass::ParagraphSeparator.0);
+pub const S: BidiClass = BidiClass(IcuBidiClass::SegmentSeparator.0);
+pub const WS: BidiClass = BidiClass(IcuBidiClass::WhiteSpace.0);
+pub const ON: BidiClass = BidiClass(IcuBidiClass::OtherNeutral.0);
+pub const LRE: BidiClass = BidiClass(IcuBidiClass::LeftToRightEmbedding.0);
+pub const LRO: BidiClass = BidiClass(IcuBidiClass::LeftToRightOverride.0);
+pub const AL: BidiClass = BidiClass(IcuBidiClass::ArabicLetter.0);
+pub const RLE: BidiClass = BidiClass(IcuBidiClass::RightToLeftEmbedding.0);
+pub const RLO: BidiClass = BidiClass(IcuBidiClass::RightToLeftOverride.0);
+pub const PDF: BidiClass = BidiClass(IcuBidiClass::PopDirectionalFormat.0);
+pub const NSM: BidiClass = BidiClass(IcuBidiClass::NonspacingMark.0);
+pub const BN: BidiClass = BidiClass(IcuBidiClass::BoundaryNeutral.0);
+pub const FSI: BidiClass = BidiClass(IcuBidiClass::FirstStrongIsolate.0);
+pub const LRI: BidiClass = BidiClass(IcuBidiClass::LeftToRightIsolate.0);
+pub const RLI: BidiClass = BidiClass(IcuBidiClass::RightToLeftIsolate.0);
+pub const PDI: BidiClass = BidiClass(IcuBidiClass::PopDirectionalIsolate.0);
+
 /// Resolver for the unicode bidirectional algorithm.
-#[derive(Clone, Default)]
-pub struct BidiResolver {
+#[derive(Default)]
+pub struct BidiAnalyzer {
     base_level: BidiLevel,
     levels: Vec<BidiLevel>,
     initial_types: Vec<BidiClass>,
@@ -26,7 +58,7 @@ pub struct BidiResolver {
     flags: u16,
 }
 
-impl BidiResolver {
+impl BidiAnalyzer {
     /// Creates a new resolver.
     pub fn new() -> Self {
         Self {
@@ -66,17 +98,15 @@ impl BidiResolver {
 
     /// Resolves a paragraph with the specified base direction and
     /// precomputed types.
-    pub fn resolve(
-        &mut self,
-        chars: impl Iterator<Item = (char, BidiClass)>,
-        base_level: Option<u8>,
-    ) {
+    pub fn resolve(&mut self, chars: impl Iterator<Item = (char, u8)>, base_level: Option<u8>) {
+        let bidi_data = icu_properties::bidi_data::bidi_auxiliary_properties();
         self.clear();
         let mut needs_bidi = false;
         let mut len = 0;
         for (i, (ch, t)) in chars.enumerate() {
+            let t = BidiClass(t);
             self.initial_types.push(t);
-            let bracket = ch.bracket_type();
+            let bracket = bidi_data.get32_pairing_props(ch as u32);
             if bracket != BracketType::None {
                 self.brackets.push((i, ch, bracket));
             }
@@ -383,7 +413,6 @@ impl BidiResolver {
         }
     }
 
-    #[allow(clippy::needless_range_loop)]
     fn resolve_sequence(&mut self, level: u8, sos: BidiClass, eos: BidiClass, len: usize) {
         if len == 0 {
             return;
@@ -456,18 +485,17 @@ impl BidiResolver {
         // W6, W7
         const W6_MASK: u32 = ES.mask() | ET.mask() | CS.mask();
         prev_strong = sos;
-        for i in 0..len {
-            let t = types[i];
-            if t.mask() & W6_MASK != 0 {
+        for ty in types.iter_mut().take(len) {
+            if ty.mask() & W6_MASK != 0 {
                 // W6
-                types[i] = ON;
-            } else if t == EN {
+                *ty = ON;
+            } else if *ty == EN {
                 // W7
                 if prev_strong == L {
-                    types[i] = L;
+                    *ty = L;
                 }
-            } else if t == L || t == R {
-                prev_strong = t;
+            } else if *ty == L || *ty == R {
+                prev_strong = *ty;
             }
         }
         // N0
@@ -480,16 +508,16 @@ impl BidiResolver {
                 }
                 let index = self.indices[i];
                 if let Ok(index) = self.brackets.binary_search_by(|x| x.0.cmp(&index)) {
-                    let (_, ch, bracket) = self.brackets[index];
+                    let (_, ch, bracket) = &self.brackets[index];
                     match bracket {
                         BracketType::Open(closer) => {
                             if bracket_stack.depth == MAX_BRACKET_STACK {
                                 break;
                             }
-                            bracket_stack.push(i, closer);
+                            bracket_stack.push(i, *closer);
                         }
                         BracketType::Close(_) => {
-                            if let Some(open) = bracket_stack.find_and_pop(ch) {
+                            if let Some(open) = bracket_stack.find_and_pop(*ch) {
                                 self.bracket_pairs.push((open, i));
                             }
                         }
@@ -658,8 +686,9 @@ where
 {
     let mut max_level = 0;
     let mut lowest_odd_level = 255;
-    for (i, o) in order.iter_mut().enumerate() {
-        *o = i;
+    let mut idx = 0;
+    let len = order.len();
+    for i in 0..len {
         let level = levels(i);
         if level > max_level {
             max_level = level;
@@ -667,8 +696,9 @@ where
         if level & 1 != 0 && level < lowest_odd_level {
             lowest_odd_level = level;
         }
+        order[idx] = idx;
+        idx += 1;
     }
-    let len = order.len();
     for level in (lowest_odd_level..=max_level).rev() {
         let mut i = 0;
         while i < len {

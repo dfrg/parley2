@@ -42,7 +42,7 @@ impl Weight {
             (700, 200),
             (800, 205),
             (900, 210),
-            (950, 215),
+            (1000, 215),
         ];
         for (i, (ot, fc)) in MAP.iter().skip(1).enumerate() {
             if weight == *fc {
@@ -58,7 +58,7 @@ impl Weight {
                 return Self::new(ot_a + (ot_b - ot_a) * t);
             }
         }
-        Weight::EXTRA_BLACK
+        Self::new(1000.0)
     }
 }
 
@@ -79,9 +79,6 @@ impl CachedFont {
         self.path.clear();
         self.index = 0;
         self.coverage.clear();
-        self.weight = Weight::default();
-        self.style = Style::default();
-        self.stretch = Stretch::default();
     }
 }
 

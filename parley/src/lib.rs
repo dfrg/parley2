@@ -23,6 +23,8 @@ mod shape;
 mod swash_convert;
 mod util;
 
+pub mod pipeline;
+
 pub mod context;
 pub mod layout;
 pub mod style;

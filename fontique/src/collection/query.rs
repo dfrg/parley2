@@ -9,10 +9,7 @@ use super::super::{Collection, SourceCache};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use super::{
-    super::{Attributes, Blob, FallbackKey, FamilyId, FamilyInfo, GenericFamily, Synthesis},
-    Inner,
-};
+use super::super::{Attributes, Blob, FallbackKey, FamilyId, FamilyInfo, GenericFamily, Synthesis};
 
 #[derive(Clone, Default)]
 pub(super) struct QueryState {
@@ -28,11 +25,8 @@ impl QueryState {
 }
 
 /// State for font selection.
-///
-/// Instances of this can be obtained from [`Collection::query`].
 pub struct Query<'a> {
-    collection: &'a mut Inner,
-    state: &'a mut QueryState,
+    collection: &'a mut Collection,
     #[cfg(feature = "std")]
     source_cache: &'a mut SourceCache,
     attributes: Attributes,
@@ -44,12 +38,16 @@ impl<'a> Query<'a> {
     pub(super) fn new(collection: &'a mut Collection, source_cache: &'a mut SourceCache) -> Self {
         collection.query_state.clear();
         Self {
-            collection: &mut collection.inner,
-            state: &mut collection.query_state,
+            collection,
             source_cache,
             attributes: Attributes::default(),
             fallbacks: None,
         }
+    }
+
+    /// Returns a mutable reference to the underyling collection.
+    pub fn collection(&mut self) -> &mut Collection {
+        self.collection
     }
 
     /// Sets the ordered sequence of families to match against.
@@ -58,21 +56,23 @@ impl<'a> Query<'a> {
         I: IntoIterator,
         I::Item: Into<QueryFamily<'f>>,
     {
-        self.state.families.clear();
+        let collection = &mut self.collection.inner;
+        let state = &mut self.collection.query_state;
+        state.families.clear();
         for family in families {
             let family = family.into();
             match family {
                 QueryFamily::Named(name) => {
-                    if let Some(id) = self.collection.family_id(name) {
-                        self.state.families.push(CachedFamily::new(id));
+                    if let Some(id) = collection.family_id(name) {
+                        state.families.push(CachedFamily::new(id));
                     }
                 }
                 QueryFamily::Id(id) => {
-                    self.state.families.push(CachedFamily::new(id));
+                    state.families.push(CachedFamily::new(id));
                 }
                 QueryFamily::Generic(generic) => {
-                    for id in self.collection.generic_families(generic) {
-                        self.state.families.push(CachedFamily::new(id));
+                    for id in collection.generic_families(generic) {
+                        state.families.push(CachedFamily::new(id));
                     }
                 }
             }
@@ -82,7 +82,7 @@ impl<'a> Query<'a> {
     /// Sets the primary attributes to match against.
     pub fn set_attributes(&mut self, attributes: Attributes) {
         if self.attributes != attributes {
-            for family in &mut self.state.families {
+            for family in &mut self.collection.query_state.families {
                 family.clear_fonts();
             }
             self.attributes = attributes;
@@ -93,9 +93,10 @@ impl<'a> Query<'a> {
     pub fn set_fallbacks(&mut self, key: impl Into<FallbackKey>) {
         let key = key.into();
         if self.fallbacks != Some(key) {
-            self.state.fallback_families.clear();
-            self.state.fallback_families.extend(
+            self.collection.query_state.fallback_families.clear();
+            self.collection.query_state.fallback_families.extend(
                 self.collection
+                    .inner
                     .fallback_families(key)
                     .map(CachedFamily::new),
             );
@@ -105,22 +106,20 @@ impl<'a> Query<'a> {
 
     /// Invokes the given callback with all fonts that match the current
     /// settings.
-    ///
-    /// Return [`QueryStatus::Stop`] to end iterating over the matching
-    /// fonts or [`QueryStatus::Continue`] to continue iterating.
     #[cfg(feature = "std")]
     pub fn matches_with(&mut self, mut f: impl FnMut(&QueryFont) -> QueryStatus) {
-        for family in self
-            .state
+        let collection = &mut self.collection.inner;
+        let state = &mut self.collection.query_state;
+        for family in state
             .families
             .iter_mut()
-            .chain(self.state.fallback_families.iter_mut())
+            .chain(state.fallback_families.iter_mut())
         {
             match &mut family.family {
                 Entry::Error => continue,
                 Entry::Ok(..) => {}
                 status @ Entry::Vacant => {
-                    if let Some(info) = self.collection.family(family.id) {
+                    if let Some(info) = collection.family(family.id) {
                         *status = Entry::Ok(info);
                     } else {
                         *status = Entry::Error;
@@ -166,13 +165,11 @@ impl<'a> Query<'a> {
 
 impl Drop for Query<'_> {
     fn drop(&mut self) {
-        self.state.clear();
+        self.collection.query_state.clear();
     }
 }
 
 /// Determines whether a font query operation will continue.
-///
-/// See [`Query::matches_with`].
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum QueryStatus {
     /// Query should continue with the next font.
@@ -182,9 +179,6 @@ pub enum QueryStatus {
 }
 
 /// Family descriptor for a font query.
-///
-/// This allows [`Query::set_families`] to
-/// take a variety of family types.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum QueryFamily<'a> {
     /// A named font family.
@@ -213,14 +207,14 @@ impl From<GenericFamily> for QueryFamily<'static> {
     }
 }
 
-/// Candidate font generated by a [`Query`].
+/// Candidate font generated by a query.
 #[derive(Clone, Debug)]
 pub struct QueryFont {
     /// Family identifier and index of the font in the family font list.
     pub family: (FamilyId, usize),
     /// Blob containing the font data.
     pub blob: Blob<u8>,
-    /// Index of a font in a font collection (`ttc`) file.
+    /// Index of a font in a font collection (ttc) file.
     pub index: u32,
     /// Synthesis suggestions for this font based on the requested attributes.
     pub synthesis: Synthesis,

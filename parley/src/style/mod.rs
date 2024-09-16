@@ -8,8 +8,8 @@ mod font;
 
 pub use brush::*;
 pub use font::{
-    FontFamily, FontFeature, FontSettings, FontStack, FontStretch, FontStyle, FontVariation,
-    FontWeight, GenericFamily,
+    FontAttributes, FontFamily, FontFeature, FontSettings, FontStack, FontStretch, FontStyle,
+    FontVariation, FontWeight, GenericFamily,
 };
 
 /// Properties that define a style.

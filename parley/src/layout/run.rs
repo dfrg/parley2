@@ -5,16 +5,12 @@ use super::*;
 
 impl<'a, B: Brush> Run<'a, B> {
     pub(crate) fn new(
-        layout: &'a Layout<B>,
-        line_index: u32,
-        index: u32,
+        layout: &'a LayoutData<B>,
         data: &'a RunData,
         line_data: Option<&'a LineItemData>,
     ) -> Self {
         Self {
             layout,
-            line_index,
-            index,
             data,
             line_data,
         }
@@ -22,7 +18,7 @@ impl<'a, B: Brush> Run<'a, B> {
 
     /// Returns the font for the run.
     pub fn font(&self) -> &Font {
-        self.layout.data.fonts.get(self.data.font_index).unwrap()
+        self.layout.fonts.get(self.data.font_index).unwrap()
     }
 
     /// Returns the font size for the run.
@@ -39,7 +35,6 @@ impl<'a, B: Brush> Run<'a, B> {
     /// with the run.
     pub fn normalized_coords(&self) -> &[NormalizedCoord] {
         self.layout
-            .data
             .coords
             .get(self.data.coords_range.clone())
             .unwrap_or(&[])
@@ -65,7 +60,7 @@ impl<'a, B: Brush> Run<'a, B> {
             .clone()
     }
 
-    /// Returns `true` if the run has right-to-left directionality.
+    /// Returns true if the run has right-to-left directionality.
     pub fn is_rtl(&self) -> bool {
         self.data.bidi_level & 1 != 0
     }
@@ -83,7 +78,7 @@ impl<'a, B: Brush> Run<'a, B> {
         self.cluster_range().len()
     }
 
-    /// Returns `true` if the run is empty.
+    /// Returns true if the run is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -94,12 +89,10 @@ impl<'a, B: Brush> Run<'a, B> {
             .line_data
             .map(|d| &d.cluster_range)
             .unwrap_or(&self.data.cluster_range);
-        let original_index = index;
         let index = range.start + index;
         Some(Cluster {
-            path: ClusterPath::new(self.line_index, self.index, original_index as u32),
             run: self.clone(),
-            data: self.layout.data.clusters.get(index)?,
+            data: self.layout.clusters.get(index)?,
         })
     }
 
@@ -111,22 +104,6 @@ impl<'a, B: Brush> Run<'a, B> {
             range,
             rev: false,
         }
-    }
-
-    /// Returns the visual cluster index for the specified logical cluster index.
-    pub fn logical_to_visual(&self, logical_index: usize) -> Option<usize> {
-        let num_clusters = self.len();
-        if logical_index >= num_clusters {
-            return None;
-        }
-
-        let visual_index = if self.is_rtl() {
-            num_clusters - 1 - logical_index
-        } else {
-            logical_index
-        };
-
-        Some(visual_index)
     }
 
     /// Returns the logical cluster index for the specified visual cluster index.
@@ -182,13 +159,8 @@ impl<'a, B: Brush> Iterator for Clusters<'a, B> {
             self.range.next()?
         };
         Some(Cluster {
-            path: ClusterPath::new(
-                self.run.line_index,
-                self.run.index,
-                (index - self.run.cluster_range().start) as u32,
-            ),
             run: self.run.clone(),
-            data: self.run.layout.data.clusters.get(index)?,
+            data: self.run.layout.clusters.get(index)?,
         })
     }
 }

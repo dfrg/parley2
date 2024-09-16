@@ -4,7 +4,7 @@
 use core::fmt;
 
 pub use fontique::{
-    GenericFamily, Stretch as FontStretch, Style as FontStyle, Weight as FontWeight,
+    GenericFamily, Stretch as FontStretch, Style as FontStyle, Weight as FontWeight, Attributes as FontAttributes,
 };
 
 /// Setting for a font variation.
