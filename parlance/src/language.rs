@@ -14,9 +14,12 @@ use core::str::FromStr;
 /// - script: 4 titlecase letters (e.g. `LATN` → `Latn`)
 /// - region: 2 uppercase letters or 3 digits (e.g. `us` → `US`, `419` → `419`)
 ///
+/// Up to three extended language subtags (`extlang`) are parsed and the first one replaces the
+/// primary language, but they are not otherwise retained. More than three `extlang` subtags
+/// will error.
+///
 /// Trailing subtags (variants, extensions, private use) are validated for basic structural
-/// conformance but discarded. Extended language subtags (`extlang`) are not supported and will
-/// error.
+/// conformance but discarded.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Language {
     bytes: [u8; 12],
@@ -146,6 +149,37 @@ fn parse_language_prefix(s: &str) -> Result<(Language, &str), ParseLanguageError
         out.bytes[i] = b.to_ascii_lowercase();
     }
     out.len = out.language_len;
+
+    let mut extlang_count = 0;
+    let mut current_pos = pos; // Track pos carefully through the loop
+
+    // extlangs: lower
+    while extlang_count < 3 {
+        // Capture extlang subtags (up to 3), but only the first one is used to
+        // replace the primary language.
+        let mut peek_pos = current_pos;
+        if let Some((start, end)) = next_part_bounds(s, &mut peek_pos) {
+            let b = &bytes[start..end];
+            // An extlang must be exactly 3 alphabetic characters
+            if b.len() == 3 && b.iter().all(|c| c.is_ascii_alphabetic()) {
+                extlang_count += 1;
+                current_pos = peek_pos; // Commit the advance
+                // BCP-47 §4.5 Canonicalization: The first extlang replaces the primary language
+                if extlang_count == 1 {
+                    out.bytes[0] = b[0].to_ascii_lowercase();
+                    out.bytes[1] = b[1].to_ascii_lowercase();
+                    out.bytes[2] = b[2].to_ascii_lowercase();
+                    out.language_len = 3;
+                    out.len = 3;
+                }
+                // Subsequent extlangs (2nd and 3rd) are technically dropped during
+                // canonicalization under §4.5, but we must consume them structurally.
+                continue;
+            }
+        }
+        break;
+    }
+    pos = current_pos;
 
     // optional script or region
     let Some((start, end)) = next_part_bounds(s, &mut pos) else {
@@ -422,6 +456,42 @@ mod tests {
         let lang = Language::parse("es_419").unwrap();
         assert_eq!(lang.as_str(), "es-419");
         assert_eq!(lang.region(), Some("419"));
+    }
+
+    #[test]
+    fn parse_extlang_replaces_primary_language() {
+        let lang = Language::parse("zh-cmn-Hans-CN").unwrap();
+        assert_eq!(lang.as_str(), "cmn-Hans-CN");
+        assert_eq!(lang.language(), "cmn");
+        assert_eq!(lang.script(), Some("Hans"));
+        assert_eq!(lang.region(), Some("CN"));
+    }
+
+    #[test]
+    fn parse_accepts_up_to_three_extlangs() {
+        let lang = Language::parse("zh-cmn-Hans-CN").unwrap();
+        assert_eq!(lang.as_str(), "cmn-Hans-CN");
+        // two extlangs, ignore the second
+        let lang = Language::parse("zh-cmn-abc-Hans-CN").unwrap();
+        assert_eq!(lang.as_str(), "cmn-Hans-CN");
+        // three extlangs, ignore the second and third
+        let lang = Language::parse("zh-cmn-abc-def-Hans-CN").unwrap();
+        assert_eq!(lang.as_str(), "cmn-Hans-CN");
+    }
+
+    #[test]
+    fn parse_rejects_fourth_extlang() {
+        assert!(Language::parse("zh-cmn-abc-def-ghi-Hans-CN").is_err());
+        assert!(Language::parse("zh-cmn-abc-def-ghi-jkl-Hans-CN").is_err());
+    }
+
+    #[test]
+    fn parse_accepts_underscore_compat_separators() {
+        let lang = Language::parse("zh_cmn_Hans_CN").unwrap();
+        assert_eq!(lang.as_str(), "cmn-Hans-CN");
+        let (lang, rest) = Language::parse_prefix("zh_cmn_Hans_CN-u-ca-gregory").unwrap();
+        assert_eq!(lang.as_str(), "cmn-Hans-CN");
+        assert_eq!(rest, "u-ca-gregory");
     }
 
     #[test]
